@@ -1209,6 +1209,78 @@ impl<Ul: Unsigned, Bl: Bit, Ur: Unsigned, Br: Bit> Rem<UInt<Ur, Br>> for UInt<Ul
     }
 }
 
+// -----------------------------------------
+// PrivateRcp
+use private::{PrivateRcp, PrivateRefineRcp, PrivateRefinedRcp};
+
+impl<W: Unsigned, U: Unsigned, B: Bit> PrivateRcp<W> for UInt<U, B>
+    where U1: Shl<W>,
+          UInt<U, B>: Len,
+          Shleft<U1, W>: Shr<Length<UInt<U, B>>>,
+          (): PrivateRefineRcp<W, UInt<U, B>, Shright<Shleft<U1, W>, Length<UInt<U, B>>>>
+{
+    // refine_rcp(w, y, (1 << w) >> len(y))
+    type Output = PrivateRefinedRcp<W, UInt<U, B>, Shright<Shleft<U1, W>, Length<UInt<U, B>>>, ()>;
+}
+
+impl<W, Y, Z> PrivateRefineRcp<W, Y, Z> for ()
+    where Y: Mul<Z>,
+          U1: Shl<W>,
+          Shleft<U1, W>: Sub<Prod<Y, Z>>,
+          Z: Mul<Diff<Shleft<U1, W>, Prod<Y, Z>>>,
+          Prod<Z, Diff<Shleft<U1, W>, Prod<Y, Z>>>: Shr<W>,
+          Shright<Prod<Z, Diff<Shleft<U1, W>, Prod<Y, Z>>>, W>: PrivateRefineRcp<W, Y, Z>,
+{
+    // zd = (z * ((1 << width) - y * z)) >> width
+    type Output = PrivateRefinedRcp<W, Y, Z,
+                                    Shright<Prod<Z, Diff<Shleft<U1, W>, Prod<Y, Z>>>, W>>;
+}
+
+impl<W, Y, Z: Unsigned> PrivateRefineRcp<W, Y, Z> for UTerm
+{
+    // zd == 0 => z is a good approximation of the reciprocal
+    type Output = Z;
+}
+
+impl<W, Y, Z, U, B> PrivateRefineRcp<W, Y, Z> for UInt<U, B>
+    where Z: Add<UInt<U, B>>,
+          (): PrivateRefineRcp<W, Y, Sum<Z, UInt<U, B>>>
+{
+    // zd > 0 => refine_rcp(w, y, z + zd)
+    type Output = PrivateRefinedRcp<W, Y, Sum<Z, UInt<U, B>>, ()>;
+}
+
+macro_rules! test_rcp {
+    (2 ^ $a:ident / $b:ty) => (
+        {
+            type R = PrivateReciprocal<$a, $b>;
+            // Check R is a TYLB
+            let z = <R as Unsigned>::to_usize();
+            let y = <$b as Unsigned>::to_usize();
+            let width = <$a as Unsigned>::to_usize();
+            assert!(z * y < 1 << width,
+                    "reciprocal is too big: {} * {} < {} ?",
+                    z, y, 1u64 << width);
+            assert!(1 << width <= z * y + 2 * y,
+                    "reciprocal is too small: {} <= {} * {} + 2 * {} ?",
+                    1u64 << width, z, y, y);
+        }
+    );
+}
+#[test]
+fn test_rcp() {
+    use consts::*;
+    use private::PrivateReciprocal;
+
+    test_rcp!(2 ^ U0 / U12);
+    test_rcp!(2 ^ U9 / U17); // converges in 4 iterations
+    test_rcp!(2 ^ U17 / U257); // converges in 5 iterations
+
+    // 32769 is the very worst case in the whole range of 32 bits
+    // numbers, as it requires 6 iterations to converge for a width of
+    // 31 bits
+    test_rcp!(2 ^ U31 / Sum<U32768, U1>);
+}
 
 // -----------------------------------------
 // PrivateDiv

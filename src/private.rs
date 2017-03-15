@@ -256,6 +256,20 @@ pub type PrivateDivIfRem<N, D, Q, R, I, RcmpD> = <() as PrivateDivIf<N,
                                                                             I,
                                                                             RcmpD>>::Remainder;
 
+pub trait PrivateRcp<W> {
+    type Output;
+}
+
+pub type PrivateReciprocal<W, Y> =
+    <Y as PrivateRcp<W>>::Output;
+
+pub trait PrivateRefineRcp<W, Y, Z> {
+    type Output: Unsigned;
+}
+
+pub type PrivateRefinedRcp<W, Y, Z, ZD> =
+    <ZD as PrivateRefineRcp<W, Y, Z>>::Output;
+
 // Div for signed ints
 pub trait PrivateDivInt<C, Divisor> {
     type Output;
